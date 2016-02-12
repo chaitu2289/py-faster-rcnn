@@ -176,7 +176,8 @@ __C.TEST.RPN_MIN_SIZE = 16
 __C.DEDUP_BOXES = 1./16.
 
 # Pixel mean values (BGR order) as a (1, 1, 3) array
-# These are the values originally used for training VGG16
+# We use the same pixel mean for all networks even though it's not exactly what
+# they were trained with
 __C.PIXEL_MEANS = np.array([[[102.9801, 115.9465, 122.7717]]])
 
 # For reproducibility
@@ -187,6 +188,15 @@ __C.EPS = 1e-14
 
 # Root directory of project
 __C.ROOT_DIR = osp.abspath(osp.join(osp.dirname(__file__), '..', '..'))
+
+# Data directory
+__C.DATA_DIR = osp.abspath(osp.join(__C.ROOT_DIR, 'data'))
+
+# Model directory
+__C.MODELS_DIR = osp.abspath(osp.join(__C.ROOT_DIR, 'models'))
+
+# Name (or path to) the matlab executable
+__C.MATLAB = 'matlab'
 
 # Place outputs under an experiments directory
 __C.EXP_DIR = 'default'
