@@ -64,7 +64,7 @@ if __name__ == '__main__':
         cfg_from_list(args.set_cfgs)
 
     cfg.GPU_ID = args.gpu_id
-
+    #cfg.TEST.HAS_RPN = True  # Use RPN for proposals
     print('Using config:')
     pprint.pprint(cfg)
 
