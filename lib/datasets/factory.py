@@ -11,6 +11,7 @@ __sets = {}
 
 from datasets.pascal_voc import pascal_voc
 import numpy as np
+import pdb
 
 def _selective_search_IJCV_top_k(split, year, top_k):
     """Return an imdb that uses the top k proposals from the selective search
@@ -23,7 +24,9 @@ def _selective_search_IJCV_top_k(split, year, top_k):
 
 # Set up voc_<year>_<split> using selective search "fast" mode
 for year in ['2007', '2012']:
-    for split in ['train', 'val', 'trainval', 'test']:
+    #pdb.set_trace()
+    for split in ['train', 'val', 'trainval', 'test', 'train_200', 'finetune']:
+	if split == 'finetune' and year == '2012': continue
         name = 'voc_{}_{}'.format(year, split)
         __sets[name] = (lambda split=split, year=year:
                 pascal_voc(split, year))

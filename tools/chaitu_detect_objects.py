@@ -130,9 +130,10 @@ def detect_objects(image_path):
 
     prototxt = os.path.join(cfg.ROOT_DIR, 'models', NETS[args.demo_net][0],
                             'faster_rcnn_alt_opt', 'faster_rcnn_test.pt')
-    caffemodel = os.path.join(cfg.ROOT_DIR, 'data', 'faster_rcnn_models',
+    #caffemodel = os.path.join(cfg.ROOT_DIR, 'data', 'faster_rcnn_models',
+    #                          NETS[args.demo_net][1])
+    caffemodel = os.path.join(cfg.ROOT_DIR, 'models', 'model_from_scratch',
                               NETS[args.demo_net][1])
-
     if not os.path.isfile(caffemodel):
         raise IOError(('{:s} not found.\nDid you run ./data/script/'
                        'fetch_faster_rcnn_models.sh?').format(caffemodel))

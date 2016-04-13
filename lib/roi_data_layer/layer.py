@@ -96,7 +96,6 @@ class RoIDataLayer(caffe.Layer):
             max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE)
         self._name_to_top_map['data'] = idx
         idx += 1
-
         if cfg.TRAIN.HAS_RPN:
             top[idx].reshape(1, 3)
             self._name_to_top_map['im_info'] = idx

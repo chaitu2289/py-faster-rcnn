@@ -25,6 +25,7 @@ import sys, os
 import multiprocessing as mp
 import cPickle
 import shutil
+import time
 
 def parse_args():
     """
@@ -79,7 +80,7 @@ def get_solvers(net_name):
     solvers = [os.path.join(cfg.MODELS_DIR, *s) for s in solvers]
     # Iterations for each training stage
     #max_iters = [80000, 40000, 80000, 40000]
-    max_iters = [100, 100, 100, 100]
+    max_iters = [0, 0, 0, 1000]
     # Test prototxt for the RPN
     rpn_test_prototxt = os.path.join(
         cfg.MODELS_DIR, net_name, n, 'rpn_test.pt')
@@ -203,6 +204,7 @@ def train_fast_rcnn(queue=None, imdb_name=None, init_model=None, solver=None,
 
 if __name__ == '__main__':
     args = parse_args()
+    start = time.time()
 
     print('Called with args:')
     print(args)
@@ -328,8 +330,10 @@ if __name__ == '__main__':
     # Create final model (just a copy of the last stage)
     final_path = os.path.join(
             os.path.dirname(fast_rcnn_stage2_out['model_path']),
-            args.net_name + '_faster_rcnn_final.caffemodel')
+            args.net_name + '_faster_rcnn_finetune.caffemodel')
     print 'cp {} -> {}'.format(
             fast_rcnn_stage2_out['model_path'], final_path)
     shutil.copy(fast_rcnn_stage2_out['model_path'], final_path)
+    end = time.time()
+    print end-start
     print 'Final model: {}'.format(final_path)

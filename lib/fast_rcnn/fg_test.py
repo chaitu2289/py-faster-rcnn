@@ -109,7 +109,7 @@ def _get_blobs(im, rois):
         blobs['rois'] = _get_rois_blob(rois, im_scale_factors)
     return blobs, im_scale_factors
 
-def im_detect(net, im, boxes=None, feature_generation=False):
+def im_detect(net, im, boxes=None, feature_generation=True):
     """Detect object classes in an image given object proposals.
 
     Arguments:
@@ -128,7 +128,6 @@ def im_detect(net, im, boxes=None, feature_generation=False):
     ###
     if feature_generation:
     	blobs['rois'] = np.array([np.append(0,box) for box in boxes])
-    	pdb.set_trace()
     ###
     #  Code above added by chaitu
     ###
@@ -173,38 +172,40 @@ def im_detect(net, im, boxes=None, feature_generation=False):
         forward_kwargs['rois'] = blobs['rois'].astype(np.float32, copy=False)
     #pdb.set_trace()
     blobs_out = net.forward(**forward_kwargs)
-    if feature_generation:
-    	feature_vector = net.blobs['fc7'].data
+    return net.blobs['fc7'].data
+    #pdb.set_trace()
+    #if feature_generation:
+    #	feature_vector = net.blobs['fc7'].data
 
-    if cfg.TEST.HAS_RPN:
-        assert len(im_scales) == 1, "Only single-image batch implemented"
-        rois = net.blobs['rois'].data.copy()
-        # unscale back to raw image space
-        boxes = rois[:, 1:5] / im_scales[0]
+    #if cfg.TEST.HAS_RPN:
+    #    assert len(im_scales) == 1, "Only single-image batch implemented"
+    #    rois = net.blobs['rois'].data.copy()
+    #    # unscale back to raw image space
+    #    boxes = rois[:, 1:5] / im_scales[0]
 
-    if cfg.TEST.SVM:
+    #if cfg.TEST.SVM:
         # use the raw scores before softmax under the assumption they
         # were trained as linear SVMs
-        scores = net.blobs['cls_score'].data
-    else:
+    #    scores = net.blobs['cls_score'].data
+    #else:
         # use softmax estimated probabilities
-        scores = blobs_out['cls_prob']
+    #    scores = blobs_out['cls_prob']
 
-    if cfg.TEST.BBOX_REG:
+    #if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
-        box_deltas = blobs_out['bbox_pred']
-        pred_boxes = bbox_transform_inv(boxes, box_deltas)
-        pred_boxes = clip_boxes(pred_boxes, im.shape)
-    else:
+    #    box_deltas = blobs_out['bbox_pred']
+    #    pred_boxes = bbox_transform_inv(boxes, box_deltas)
+    #    pred_boxes = clip_boxes(pred_boxes, im.shape)
+    #else:
         # Simply repeat the boxes, once for each class
-        pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+    #    pred_boxes = np.tile(boxes, (1, scores.shape[1]))
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
+    #if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
         # Map scores and predictions back to the original set of boxes
-        scores = scores[inv_index, :]
-        pred_boxes = pred_boxes[inv_index, :]
+    #    scores = scores[inv_index, :]
+    #    pred_boxes = pred_boxes[inv_index, :]
 
-    return scores, pred_boxes
+    #return scores, pred_boxes
 
 def vis_detections(im, class_name, dets, thresh=0.3):
     """Visual debugging of detections."""
@@ -244,7 +245,7 @@ def apply_nms(all_boxes, thresh):
             nms_boxes[cls_ind][im_ind] = dets[keep, :].copy()
     return nms_boxes
 
-def test_net(net, imdb):
+def test_net(net, imdb, image_id="009965"):
     """Test a Fast R-CNN network on an image database."""
     num_images = len(imdb.image_index)
     # heuristic: keep an average of 40 detections per class per images prior
@@ -273,61 +274,142 @@ def test_net(net, imdb):
 
     if not cfg.TEST.HAS_RPN:
         roidb = imdb.roidb
+
+    if cfg.TEST.HAS_RPN:
+    	box_proposals = None
+    else:
+      	box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
+    ##
+    # code below added by chaitu
+    ##
+    image_index_chaitu = image_id
+    box_proposals = _load_pascal_annotation(image_index_chaitu) 
+    box_proposals['boxes'] = np.array([box_proposals['boxes'][0]])
+    box_proposals['gt_classes'] = np.array([box_proposals['gt_classes'][0]])
+    gt_new_image = box_proposals['gt_classes'][0]
+    ##
+    # code above added by chaitu
+    ##
+
+    im = cv2.imread('/var/services/homes/kchakka/py-faster-rcnn/data/VOCdevkit2007/VOC2007/JPEGImages/'+image_index_chaitu+'.jpg')
+    feature_vector_ = im_detect(net, im, box_proposals['boxes'])
+    feature_vector_ = feature_vector_.squeeze()
+    feature_vector_ = feature_vector_/np.linalg.norm(feature_vector_)
+    max_fv_ = 0
+    output = []
+    dot_prod_values = []
+    #num_images = 200
     for i in xrange(num_images):
+	print i
         # filter out any ground truth boxes
         if cfg.TEST.HAS_RPN:
             box_proposals = None
         else:
             box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
+	##
+	# code below added by chaitu
+	##
+	image_index_chaitu = imdb.image_path_at(i).split('/')[-1].split('.')[0] 
+	box_proposals = _load_pascal_annotation(image_index_chaitu) 
+	##
+	# code above added by chaitu
+	##
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
-        scores, boxes = im_detect(net, im, box_proposals)
+        fv_ = im_detect(net, im, box_proposals['boxes'])
+ 	counter = 0
+	similar_label = []
+	non_similar_label = []
+	import sys
+	max_int = sys.maxint
+        for f_ in fv_:
+		f_ = f_.squeeze()
+		f_ = f_/np.linalg.norm(f_)
+		dot_prod = np.dot(feature_vector_, f_)
+		l2_distance = np.linalg.norm(feature_vector_ - f_)
+		similar_image_index = tuple((l2_distance, i, box_proposals['gt_classes'][counter]))
+		if len(output) < 20: 
+			output.append(similar_image_index)
+			output = sorted(output, reverse=True)
+		else:
+			if output[0][0] > l2_distance:
+				output.pop(0)
+				output.append(similar_image_index)
+				output = sorted(output, reverse=True)
+		counter += 1
         _t['im_detect'].toc()
+    train_txt = "/var/services/homes/kchakka/py-faster-rcnn/VOCdevkit/VOC2007/ImageSets/Main/train.txt"
+    f = open(train_txt,'r')
+    train_images = []
+    similar_image_indices = []
+    for line in f.readlines():
+	train_images.append(line.strip())
+    for boxes in output:
+	similar_image_indices.append(train_images[boxes[1]])
+    print output
+    print similar_image_indices
+    for boxes in output:
+	if boxes[2] == gt_new_image:
+		similar_label.append(boxes)
+	else:
+		non_similar_label.append(boxes)
+    similar_label_size = len(similar_label)
+    non_similar_label = non_similar_label[:similar_label_size]
+	
+    fine_tune_data = similar_label + non_similar_label
+    f = open('finetune.txt', 'w')
+    for label in fine_tune_data:
+        id_length = len(str(label[1]))
+	zeros = "0"*(6-id_length)
+	f.write(zeros + str(label[1]) + "\n")
+    f.close() 
+     
+    
 
-        _t['misc'].tic()
-        for j in xrange(1, imdb.num_classes):
-            inds = np.where(scores[:, j] > thresh[j])[0]
-            cls_scores = scores[inds, j]
-            cls_boxes = boxes[inds, j*4:(j+1)*4]
-            top_inds = np.argsort(-cls_scores)[:max_per_image]
-            cls_scores = cls_scores[top_inds]
-            cls_boxes = cls_boxes[top_inds, :]
-            # push new scores onto the minheap
-            for val in cls_scores:
-                heapq.heappush(top_scores[j], val)
-            # if we've collected more than the max number of detection,
-            # then pop items off the minheap and update the class threshold
-            if len(top_scores[j]) > max_per_set:
-                while len(top_scores[j]) > max_per_set:
-                    heapq.heappop(top_scores[j])
-                thresh[j] = top_scores[j][0]
+        #_t['misc'].tic()
+        #for j in xrange(1, imdb.num_classes):
+        #    inds = np.where(scores[:, j] > thresh[j])[0]
+        #    cls_scores = scores[inds, j]
+        #    cls_boxes = boxes[inds, j*4:(j+1)*4]
+        #    top_inds = np.argsort(-cls_scores)[:max_per_image]
+        #    cls_scores = cls_scores[top_inds]
+        #    cls_boxes = cls_boxes[top_inds, :]
+        #    # push new scores onto the minheap
+        #    for val in cls_scores:
+        #        heapq.heappush(top_scores[j], val)
+        #    # if we've collected more than the max number of detection,
+        #    # then pop items off the minheap and update the class threshold
+        #    if len(top_scores[j]) > max_per_set:
+        #        while len(top_scores[j]) > max_per_set:
+        #            heapq.heappop(top_scores[j])
+        #        thresh[j] = top_scores[j][0]
 
-            all_boxes[j][i] = \
-                    np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
-                    .astype(np.float32, copy=False)
+        #    all_boxes[j][i] = \
+        #            np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+        #            .astype(np.float32, copy=False)
 
-            if 0:
-                keep = nms(all_boxes[j][i], 0.3)
-                vis_detections(im, imdb.classes[j], all_boxes[j][i][keep, :])
-        _t['misc'].toc()
+        #    if 0:
+        #        keep = nms(all_boxes[j][i], 0.3)
+        #        vis_detections(im, imdb.classes[j], all_boxes[j][i][keep, :])
+        #_t['misc'].toc()
 
-        print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
-              .format(i + 1, num_images, _t['im_detect'].average_time,
-                      _t['misc'].average_time)
+        #print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
+        #      .format(i + 1, num_images, _t['im_detect'].average_time,
+        #              _t['misc'].average_time)
 
-    for j in xrange(1, imdb.num_classes):
-        for i in xrange(num_images):
-            inds = np.where(all_boxes[j][i][:, -1] > thresh[j])[0]
-            all_boxes[j][i] = all_boxes[j][i][inds, :]
+    #for j in xrange(1, imdb.num_classes):
+    #    for i in xrange(num_images):
+    #        inds = np.where(all_boxes[j][i][:, -1] > thresh[j])[0]
+    #        all_boxes[j][i] = all_boxes[j][i][inds, :]
 
-    det_file = os.path.join(output_dir, 'detections.pkl')
-    with open(det_file, 'wb') as f:
-        cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)
+    #det_file = os.path.join(output_dir, 'detections.pkl')
+    #with open(det_file, 'wb') as f:
+    #    cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)
 
-    print 'Applying NMS to all detections'
-    nms_dets = apply_nms(all_boxes, cfg.TEST.NMS)
-    print 'Evaluating detections'
-    imdb.evaluate_detections(nms_dets, output_dir)
+    #print 'Applying NMS to all detections'
+    #nms_dets = apply_nms(all_boxes, cfg.TEST.NMS)
+    #print 'Evaluating detections'
+    #imdb.evaluate_detections(nms_dets, output_dir)
 
 
 
@@ -337,8 +419,17 @@ def _load_pascal_annotation(image_index):
         format.
         """
 	#image_index = _load_image_set_index()
+	classes = ('__background__', # always index 0
+                         'aeroplane', 'bicycle', 'bird', 'boat',
+                         'bottle', 'bus', 'car', 'cat', 'chair',
+                         'cow', 'diningtable', 'dog', 'horse',
+                         'motorbike', 'person', 'pottedplant',
+                         'sheep', 'sofa', 'train', 'tvmonitor')
+	num_classes = len(classes)
+	_class_to_ind = dict(zip(classes, xrange(num_classes)))
 	_data_path = "/var/services/homes/kchakka/py-faster-rcnn/VOCdevkit/VOC2007"
 	image_index = [image_index]
+		 
 	for index in image_index:
         	filename = os.path.join(_data_path, 'Annotations', index + '.xml')
         	tree = ET.parse(filename)
@@ -351,7 +442,7 @@ def _load_pascal_annotation(image_index):
             		#     print 'Removed {} difficult objects'.format(
             		#         len(objs) - len(non_diff_objs))
             		objs = non_diff_objs
-       			num_objs = len(objs)
+       		num_objs = len(objs)
 
         	boxes = np.zeros((num_objs, 4), dtype=np.uint16)
         	gt_classes = np.zeros((num_objs), dtype=np.int32)
@@ -364,6 +455,7 @@ def _load_pascal_annotation(image_index):
 		##
         	# "Seg" area for pascal is just the box area
         	seg_areas = np.zeros((num_objs), dtype=np.float32)
+	
         	# Load object bounding boxes into a data frame.
         	for ix, obj in enumerate(objs):
             		bbox = obj.find('bndbox')
@@ -372,15 +464,14 @@ def _load_pascal_annotation(image_index):
             		y1 = float(bbox.find('ymin').text) - 1
             		x2 = float(bbox.find('xmax').text) - 1
             		y2 = float(bbox.find('ymax').text) - 1
-            		#cls = self._class_to_ind[obj.find('name').text.lower().strip()]
+            		cls = _class_to_ind[obj.find('name').text.lower().strip()]
             		boxes[ix, :] = [x1, y1, x2, y2]
-            		#gt_classes[ix] = cls
+            		gt_classes[ix] = cls
             		#overlaps[ix, cls] = 1.0
             		#seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
 
         	#overlaps = scipy.sparse.csr_matrix(overlaps)
-
-        return {'boxes' : boxes}
+        return {'boxes' : boxes, 'gt_classes' : gt_classes}
 
 def _load_image_set_index(_image_set="test"):
         """

@@ -88,10 +88,19 @@ if __name__ == '__main__':
         cfg_from_list(args.set_cfgs)
 
     cfg.GPU_ID = args.gpu_id
+    ##
+    #   Chaitanya
+    ##
+    cfg.TRAIN.HAS_RPN = True
+    cfg.TRAIN.IMS_PER_BATCH = 1
+    cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED = True
+    cfg.TRAIN.RPN_POSITIVE_OVERLAP = 0.7
+    cfg.TRAIN.RPN_BATCHSIZE = 256
+    cfg.TRAIN.PROPOSAL_METHOD = 'gt'
+    cfg.TRAIN.BG_THRESH_LO = 0.0	
 
     print('Using config:')
     pprint.pprint(cfg)
-
     if not args.randomize:
         # fix the random seeds (numpy and caffe) for reproducibility
         np.random.seed(cfg.RNG_SEED)
@@ -103,10 +112,10 @@ if __name__ == '__main__':
 
     imdb, roidb = combined_roidb(args.imdb_name)
     print '{:d} roidb entries'.format(len(roidb))
-
+    print "printing config file", cfg
     output_dir = get_output_dir(imdb, None)
     print 'Output will be saved to `{:s}`'.format(output_dir)
-
+    print "HAS RPN: ", cfg.TRAIN.HAS_RPN
     train_net(args.solver, roidb, output_dir,
               pretrained_model=args.pretrained_model,
               max_iters=args.max_iters)
