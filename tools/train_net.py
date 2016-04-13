@@ -112,8 +112,13 @@ if __name__ == '__main__':
 
     imdb, roidb = combined_roidb(args.imdb_name)
     print '{:d} roidb entries'.format(len(roidb))
+<<<<<<< HEAD
     print "printing config file", cfg
     output_dir = get_output_dir(imdb, None)
+=======
+
+    output_dir = get_output_dir(imdb)
+>>>>>>> 96dc9f1dea3087474d6da5a98879072901ee9bf9
     print 'Output will be saved to `{:s}`'.format(output_dir)
     print "HAS RPN: ", cfg.TRAIN.HAS_RPN
     train_net(args.solver, roidb, output_dir,

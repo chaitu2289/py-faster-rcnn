@@ -16,7 +16,6 @@ import cv2
 import caffe
 from fast_rcnn.nms_wrapper import nms
 import cPickle
-import heapq
 from utils.blob import im_list_to_blob
 import os
 
@@ -238,26 +237,18 @@ def apply_nms(all_boxes, thresh):
             dets = all_boxes[cls_ind][im_ind]
             if dets == []:
                 continue
-            keep = nms(dets, thresh)
+            # CPU NMS is much faster than GPU NMS when the number of boxes
+            # is relative small (e.g., < 10k)
+            # TODO(rbg): autotune NMS dispatch
+            keep = nms(dets, thresh, force_cpu=True)
             if len(keep) == 0:
                 continue
             nms_boxes[cls_ind][im_ind] = dets[keep, :].copy()
     return nms_boxes
 
-def test_net(net, imdb):
+def test_net(net, imdb, max_per_image=100, thresh=0.05, vis=False):
     """Test a Fast R-CNN network on an image database."""
     num_images = len(imdb.image_index)
-    # heuristic: keep an average of 40 detections per class per images prior
-    # to NMS
-    max_per_set = 40 * num_images
-    # heuristic: keep at most 100 detection per class per image prior to NMS
-    max_per_image = 100
-    # detection thresold for each class (this is adaptively set based on the
-    # max_per_set constraint)
-    thresh = -np.inf * np.ones(imdb.num_classes)
-    # top_scores will hold one minheap of scores per class (used to enforce
-    # the max_per_set constraint)
-    top_scores = [[] for _ in xrange(imdb.num_classes)]
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in
     #    (x1, y1, x2, y2, score)
@@ -265,8 +256,6 @@ def test_net(net, imdb):
                  for _ in xrange(imdb.num_classes)]
 
     output_dir = get_output_dir(imdb, net)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
 
     # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
@@ -278,47 +267,46 @@ def test_net(net, imdb):
         if cfg.TEST.HAS_RPN:
             box_proposals = None
         else:
+            # The roidb may contain ground-truth rois (for example, if the roidb
+            # comes from the training or val split). We only want to evaluate
+            # detection on the *non*-ground-truth rois. We select those the rois
+            # that have the gt_classes field set to 0, which means there's no
+            # ground truth.
             box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
+
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
         scores, boxes = im_detect(net, im, box_proposals)
         _t['im_detect'].toc()
 
         _t['misc'].tic()
+        # skip j = 0, because it's the background class
         for j in xrange(1, imdb.num_classes):
-            inds = np.where(scores[:, j] > thresh[j])[0]
+            inds = np.where(scores[:, j] > thresh)[0]
             cls_scores = scores[inds, j]
             cls_boxes = boxes[inds, j*4:(j+1)*4]
-            top_inds = np.argsort(-cls_scores)[:max_per_image]
-            cls_scores = cls_scores[top_inds]
-            cls_boxes = cls_boxes[top_inds, :]
-            # push new scores onto the minheap
-            for val in cls_scores:
-                heapq.heappush(top_scores[j], val)
-            # if we've collected more than the max number of detection,
-            # then pop items off the minheap and update the class threshold
-            if len(top_scores[j]) > max_per_set:
-                while len(top_scores[j]) > max_per_set:
-                    heapq.heappop(top_scores[j])
-                thresh[j] = top_scores[j][0]
+            cls_dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+                .astype(np.float32, copy=False)
+            keep = nms(cls_dets, cfg.TEST.NMS)
+            cls_dets = cls_dets[keep, :]
+            if vis:
+                vis_detections(im, imdb.classes[j], cls_dets)
+            all_boxes[j][i] = cls_dets
 
-            all_boxes[j][i] = \
-                    np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
-                    .astype(np.float32, copy=False)
-
-            if 0:
-                keep = nms(all_boxes[j][i], 0.3)
-                vis_detections(im, imdb.classes[j], all_boxes[j][i][keep, :])
+        # Limit to max_per_image detections *over all classes*
+        if max_per_image > 0:
+            image_scores = np.hstack([all_boxes[j][i][:, -1]
+                                      for j in xrange(1, imdb.num_classes)])
+            if len(image_scores) > max_per_image:
+                image_thresh = np.sort(image_scores)[-max_per_image]
+                for j in xrange(1, imdb.num_classes):
+                    keep = np.where(all_boxes[j][i][:, -1] >= image_thresh)[0]
+                    all_boxes[j][i] = all_boxes[j][i][keep, :]
         _t['misc'].toc()
 
         print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(i + 1, num_images, _t['im_detect'].average_time,
                       _t['misc'].average_time)
-
-    for j in xrange(1, imdb.num_classes):
-        for i in xrange(num_images):
-            inds = np.where(all_boxes[j][i][:, -1] > thresh[j])[0]
-            all_boxes[j][i] = all_boxes[j][i][inds, :]
 
     det_file = os.path.join(output_dir, 'detections.pkl')
     with open(det_file, 'wb') as f:
@@ -328,71 +316,3 @@ def test_net(net, imdb):
     nms_dets = apply_nms(all_boxes, cfg.TEST.NMS)
     print 'Evaluating detections'
     imdb.evaluate_detections(nms_dets, output_dir)
-
-
-
-def _load_pascal_annotation(image_index):
-        """
-        Load image and bounding boxes info from XML file in the PASCAL VOC
-        format.
-        """
-	#image_index = _load_image_set_index()
-	_data_path = "/var/services/homes/kchakka/py-faster-rcnn/VOCdevkit/VOC2007"
-	image_index = [image_index]
-	for index in image_index:
-        	filename = os.path.join(_data_path, 'Annotations', index + '.xml')
-        	tree = ET.parse(filename)
-        	objs = tree.findall('object')
-        	if True:
-            		# Exclude the samples labeled as difficult
-            		non_diff_objs = [
-                	obj for obj in objs if int(obj.find('difficult').text) == 0]
-            		# if len(non_diff_objs) != len(objs):
-            		#     print 'Removed {} difficult objects'.format(
-            		#         len(objs) - len(non_diff_objs))
-            		objs = non_diff_objs
-       			num_objs = len(objs)
-
-        	boxes = np.zeros((num_objs, 4), dtype=np.uint16)
-        	gt_classes = np.zeros((num_objs), dtype=np.int32)
-		##
-		#  commented below by chaitu
-		##
-        	#overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-		##
-		#  commented above by chaitu
-		##
-        	# "Seg" area for pascal is just the box area
-        	seg_areas = np.zeros((num_objs), dtype=np.float32)
-        	# Load object bounding boxes into a data frame.
-        	for ix, obj in enumerate(objs):
-            		bbox = obj.find('bndbox')
-            		# Make pixel indexes 0-based
-            		x1 = float(bbox.find('xmin').text) - 1
-            		y1 = float(bbox.find('ymin').text) - 1
-            		x2 = float(bbox.find('xmax').text) - 1
-            		y2 = float(bbox.find('ymax').text) - 1
-            		#cls = self._class_to_ind[obj.find('name').text.lower().strip()]
-            		boxes[ix, :] = [x1, y1, x2, y2]
-            		#gt_classes[ix] = cls
-            		#overlaps[ix, cls] = 1.0
-            		#seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
-
-        	#overlaps = scipy.sparse.csr_matrix(overlaps)
-
-        return {'boxes' : boxes}
-
-def _load_image_set_index(_image_set="test"):
-        """
-        Load the indexes listed in this dataset's image set file.
-        """
-        # Example path to image set file:
-        # self._devkit_path + /VOCdevkit2007/VOC2007/ImageSets/Main/val.txt
-        _data_path = "/var/services/homes/kchakka/py-faster-rcnn/VOCdevkit/VOC2007"
-        image_set_file = os.path.join(_data_path, 'ImageSets', 'Main',
-                                      _image_set + '.txt')
-        assert os.path.exists(image_set_file), \
-                'Path does not exist: {}'.format(image_set_file)
-        with open(image_set_file) as f:
-            image_index = [x.strip() for x in f.readlines()]
-        return image_index
