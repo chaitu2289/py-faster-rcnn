@@ -14,7 +14,7 @@ input_shape {
   dim: 3
 }
 
-input: "rois"
+input: "rois_"
 input_shape {
    dim: 1
    dim: 5
@@ -464,19 +464,19 @@ layer {
   top: 'rpn_cls_prob_reshape'
   reshape_param { shape { dim: 0 dim: 18 dim: -1 dim: 0 } }
 }
-#layer {
-#  name: 'proposal'
-#  type: 'Python'
-#  bottom: 'rpn_cls_prob_reshape'
-#  bottom: 'rpn_bbox_pred'
-#  bottom: 'im_info'
-#  top: 'rois'
-#  python_param {
-#    module: 'rpn.proposal_layer'
-#    layer: 'ProposalLayer'
-#    param_str: "'feat_stride': 16"
-#  }
-#}
+layer {
+  name: 'proposal'
+  type: 'Python'
+  bottom: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_bbox_pred'
+  bottom: 'im_info'
+  top: 'rois'
+  python_param {
+    module: 'rpn.proposal_layer'
+    layer: 'ProposalLayer'
+    param_str: "'feat_stride': 16"
+  }
+}
 
 #========= RCNN ============
 
@@ -484,7 +484,7 @@ layer {
   name: "roi_pool5"
   type: "ROIPooling"
   bottom: "conv5_3"
-  bottom: "rois"
+  bottom: "rois_"
   top: "pool5"
   roi_pooling_param {
     pooled_w: 7
