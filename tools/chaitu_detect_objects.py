@@ -43,6 +43,9 @@ NETS = {'vgg16': ('VGG16',
 def vis_detections(im, class_name, dets, coords, thresh=0.5):
     """Draw detected bounding boxes."""
     inds = np.where(dets[:, -1] >= thresh)[0]
+    print class_name, len(inds)
+    import pdb
+    pdb.set_trace()
    
     if len(inds) == 0:
         return
@@ -104,7 +107,8 @@ def demo(net, image_name):
                           cls_scores[:, np.newaxis])).astype(np.float32)
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
-	
+	import pdb
+	pdb.set_trace()	
         vis_detections(im, cls, dets, coords, thresh=CONF_THRESH)
     return json.dumps(coords)
 
@@ -128,7 +132,7 @@ def detect_objects(image_path):
 
     args = parse_args()
 
-    prototxt = os.path.join(cfg.ROOT_DIR, 'models', NETS[args.demo_net][0],
+    prototxt = os.path.join(cfg.ROOT_DIR, 'models/pascal_voc', NETS[args.demo_net][0],
                             'faster_rcnn_alt_opt', 'faster_rcnn_test.pt')
     #caffemodel = os.path.join(cfg.ROOT_DIR, 'data', 'faster_rcnn_models',
     #                          NETS[args.demo_net][1])
