@@ -258,6 +258,7 @@ class pascal_voc(imdb):
                                        dets[k, 2] + 1, dets[k, 3] + 1))
 
     def _do_python_eval(self, output_dir = 'output'):
+	image_performance = {}
         annopath = os.path.join(
             self._devkit_path,
             'VOC' + self._year,
@@ -282,11 +283,22 @@ class pascal_voc(imdb):
             filename = self._get_voc_results_file_template().format(cls)
             rec, prec, ap = voc_eval(
                 filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
-                use_07_metric=use_07_metric)
+                use_07_metric=use_07_metric, image_performance=image_performance)
             aps += [ap]
             print('AP for {} = {:.4f}'.format(cls, ap))
             with open(os.path.join(output_dir, cls + '_pr.pkl'), 'w') as f:
                 cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
+	bad_pred_images = []
+	for image in image_performance:
+		gts = image_performance[image][0]
+		preds = image_performance[image][1]
+		counter = 0
+		for gt in gts:
+			if gt in preds:
+				counter += 1
+		bad_pred_images.append((counter/len(gts), counter, len(gts), image))
+	print sorted(bad_pred_images)
+		
         print('Mean AP = {:.4f}'.format(np.mean(aps)))
         print('~~~~~~~~')
         print('Results:')
@@ -319,6 +331,8 @@ class pascal_voc(imdb):
 
     def evaluate_detections(self, all_boxes, output_dir):
         self._write_voc_results_file(all_boxes)
+	import pdb
+	pdb.set_trace()
         self._do_python_eval(output_dir)
         if self.config['matlab_eval']:
             self._do_matlab_eval(output_dir)
