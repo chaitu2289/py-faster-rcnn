@@ -170,7 +170,6 @@ def im_detect(net, im, boxes=None, feature_generation=False):
 		forward_kwargs['rois'] = blobs['rois'].astype(np.float32, copy=False)
     else:
         forward_kwargs['rois'] = blobs['rois'].astype(np.float32, copy=False)
-    #pdb.set_trace()
     blobs_out = net.forward(**forward_kwargs)
     if feature_generation:
     	feature_vector = net.blobs['fc7'].data
@@ -202,7 +201,7 @@ def im_detect(net, im, boxes=None, feature_generation=False):
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
-
+    
     return scores, pred_boxes
 
 def vis_detections(im, class_name, dets, thresh=0.3):
@@ -273,7 +272,6 @@ def test_net(net, imdb, max_per_image=100, thresh=0.05, vis=False):
             # that have the gt_classes field set to 0, which means there's no
             # ground truth.
             box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
-
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
         scores, boxes = im_detect(net, im, box_proposals)
