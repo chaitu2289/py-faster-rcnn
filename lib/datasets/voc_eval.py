@@ -67,7 +67,8 @@ def voc_eval(detpath,
              classname,
              cachedir,
              ovthresh=0.5,
-             use_07_metric=False):
+             use_07_metric=False,
+	     image_performance=None):
     """rec, prec, ap = voc_eval(detpath,
                                 annopath,
                                 imagesetfile,
@@ -123,6 +124,10 @@ def voc_eval(detpath,
     class_recs = {}
     npos = 0
     for imagename in imagenames:
+	if imagename not in image_performance:
+		image_performance[imagename] = [set(), set()]
+	for obj in recs[imagename]:
+		image_performance[imagename][0].add(obj['name'])
         R = [obj for obj in recs[imagename] if obj['name'] == classname]
         bbox = np.array([x['bbox'] for x in R])
         difficult = np.array([x['difficult'] for x in R]).astype(np.bool)
@@ -183,6 +188,7 @@ def voc_eval(detpath,
                 if not R['det'][jmax]:
                     tp[d] = 1.
                     R['det'][jmax] = 1
+		    image_performance[image_ids[d]][1].add(classname)
                 else:
                     fp[d] = 1.
         else:
